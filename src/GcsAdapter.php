@@ -74,15 +74,13 @@ class GcsAdapter extends AbstractAdapter
      */
     public function write($path, $contents, Config $config)
     {
-        // TODO: Complete method!
-
         $postBody = new \Google_Service_Storage_StorageObject();
-        $postBody->setName(basename($path));
+        $postBody->setName($path);
 
         $args = [
             'uploadType' => 'multipart',
             'data' => $contents,
-            'name' => basename($path),
+            'name' => $path,
         ];
 
         return $this->client->insert($this->bucket, $postBody, $args);
@@ -135,6 +133,15 @@ class GcsAdapter extends AbstractAdapter
      */
     public function copy($path, $newpath)
     {
+        $sourceBucket = parse_url($path, PHP_URL_HOST);
+        $sourceObject = ltrim(parse_url($path, PHP_URL_PATH), '/');
+
+        $destinationBucket = parse_url($newpath, PHP_URL_HOST);
+        $destinationObject = ltrim(parse_url($newpath, PHP_URL_PATH), '/');
+
+        $postBody = new \Google_Service_Storage_StorageObject();
+
+        return $this->client->copy($sourceBucket, $sourceObject, $destinationBucket, $destinationObject, $postBody);
     }
 
     /**
@@ -142,6 +149,12 @@ class GcsAdapter extends AbstractAdapter
      */
     public function delete($path)
     {
+        $bucket = parse_url($path, PHP_URL_HOST);
+        $object = ltrim(parse_url($path, PHP_URL_PATH), '/');
+
+        $this->client->delete($bucket, $object);
+
+        return $this->has($path);
     }
 
     /**
@@ -149,6 +162,7 @@ class GcsAdapter extends AbstractAdapter
      */
     public function deleteDir($path)
     {
+        return $this->delete($path);
     }
 
     /**
