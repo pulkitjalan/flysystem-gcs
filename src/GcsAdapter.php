@@ -2,9 +2,9 @@
 
 namespace League\Flysystem\Gcs;
 
-use PulkitJalan\Google\Client as GoogleClient;
 use League\Flysystem\Adapter\AbstractAdapter;
 use League\Flysystem\Config;
+use Google_Service_Storage;
 
 class GcsAdapter extends AbstractAdapter
 {
@@ -14,7 +14,7 @@ class GcsAdapter extends AbstractAdapter
     protected $bucket;
 
     /**
-     * @var GoogleClient Google Client
+     * @var Google_Service_Storage Google Storage Client
      */
     protected $client;
 
@@ -27,12 +27,12 @@ class GcsAdapter extends AbstractAdapter
      * @param array        $options
      */
     public function __construct(
-        GoogleClient $client,
+        Google_Service_Storage $client,
         $bucket,
         $prefix = null,
         array $options = []
     ) {
-        $this->client  = $client->make('storage');
+        $this->client  = $client;
         $this->bucket  = $bucket;
         $this->setPathPrefix($prefix);
         $this->options = array_merge($this->options, $options);
@@ -49,9 +49,9 @@ class GcsAdapter extends AbstractAdapter
     }
 
     /**
-     * Get the GoogleClient instance.
+     * Get the Google_Service_Storage instance.
      *
-     * @return GoogleClient
+     * @return Google_Service_Storage
      */
     public function getClient()
     {
@@ -64,7 +64,7 @@ class GcsAdapter extends AbstractAdapter
     public function has($path)
     {
         $location = $this->applyPathPrefix($path);
-        $objects = $this->client->listObjects($this->bucket, ['prefix' => $location]);
+        $objects = $this->client->objects->listObjects($this->bucket, ['prefix' => $location]);
 
         return count($objects->getItems()) !== 0;
     }
@@ -83,7 +83,7 @@ class GcsAdapter extends AbstractAdapter
             'name' => $path,
         ];
 
-        return $this->client->insert($this->bucket, $postBody, $args);
+        return $this->client->objects->insert($this->bucket, $postBody, $args);
     }
 
     /**
@@ -126,6 +126,11 @@ class GcsAdapter extends AbstractAdapter
      */
     public function rename($path, $newpath)
     {
+        if ($this->copy($path, $newPath)) {
+            return $this->delete($path);
+        }
+
+        return false;
     }
 
     /**
@@ -133,15 +138,15 @@ class GcsAdapter extends AbstractAdapter
      */
     public function copy($path, $newpath)
     {
-        $sourceBucket = parse_url($path, PHP_URL_HOST);
-        $sourceObject = ltrim(parse_url($path, PHP_URL_PATH), '/');
-
-        $destinationBucket = parse_url($newpath, PHP_URL_HOST);
-        $destinationObject = ltrim(parse_url($newpath, PHP_URL_PATH), '/');
-
         $postBody = new \Google_Service_Storage_StorageObject();
 
-        return $this->client->copy($sourceBucket, $sourceObject, $destinationBucket, $destinationObject, $postBody);
+        return $this->client->objects->copy(
+            $this->bucket,
+            $this->applyPathPrefix($path),
+            $this->bucket,
+            $this->applyPathPrefix($newPath),
+            $postBody
+        );
     }
 
     /**
@@ -149,10 +154,7 @@ class GcsAdapter extends AbstractAdapter
      */
     public function delete($path)
     {
-        $bucket = parse_url($path, PHP_URL_HOST);
-        $object = ltrim(parse_url($path, PHP_URL_PATH), '/');
-
-        $this->client->delete($bucket, $object);
+        $this->client->objects->delete($this->bucket, $this->applyPathPrefix($path));
 
         return $this->has($path);
     }
