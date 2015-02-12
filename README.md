@@ -1,2 +1,7 @@
-# flysystem-gcs
-(WIP) Flysystem Adapter for Google Cloud Storage
+# Flysystem Adapter for Google Cloud Storage
+
+## Installation
+
+```bash
+composer require pulkitjalan/flysystem-gcs
+```
