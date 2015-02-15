@@ -21,10 +21,10 @@ class GcsAdapter extends AbstractAdapter
     /**
      * Constructor.
      *
-     * @param GoogleClient $client
-     * @param string       $bucket
-     * @param string       $prefix
-     * @param array        $options
+     * @param Google_Service_Storage $client
+     * @param string                 $bucket
+     * @param string                 $prefix
+     * @param array                  $options
      */
     public function __construct(
         Google_Service_Storage $client,
@@ -64,7 +64,7 @@ class GcsAdapter extends AbstractAdapter
     public function has($path)
     {
         $location = $this->applyPathPrefix($path);
-        $objects = $this->client->objects->listObjects($this->bucket, ['prefix' => $location]);
+        $objects = $this->client->objects->listObjects($this->bucket, ['prefix' => $location, 'maxResults' => 1]);
 
         return count($objects->getItems()) !== 0;
     }
@@ -112,6 +112,7 @@ class GcsAdapter extends AbstractAdapter
      */
     public function read($path)
     {
+        return $this->readObject($path);
     }
 
     /**
@@ -119,6 +120,20 @@ class GcsAdapter extends AbstractAdapter
      */
     public function readStream($path)
     {
+    }
+
+    /**
+     * Read an object from the Google_Service_Storage.
+     *
+     * @param string $path
+     *
+     * @return array
+     */
+    protected function readObject($path)
+    {
+        $file = $this->client->objects->readObject($this->bucket, $path, ['alt' => 'media']);
+
+        return array_merge($this->getMetadata($path), ['contents' => $file]);
     }
 
     /**
@@ -138,15 +153,12 @@ class GcsAdapter extends AbstractAdapter
      */
     public function copy($path, $newpath)
     {
+        $location = $this->applyPathPrefix($path);
+        $newLocation = $this->applyPathPrefix($newPath);
+
         $postBody = new \Google_Service_Storage_StorageObject();
 
-        return $this->client->objects->copy(
-            $this->bucket,
-            $this->applyPathPrefix($path),
-            $this->bucket,
-            $this->applyPathPrefix($newPath),
-            $postBody
-        );
+        return $this->client->objects->copy($this->bucket, $location, $this->bucket, $newLocation, $postBody);
     }
 
     /**
@@ -172,6 +184,13 @@ class GcsAdapter extends AbstractAdapter
      */
     public function createDir($path, Config $config)
     {
+        $this->write(rtrim($path, '/').'/', '', $config);
+
+        if (! $this->has($path)) {
+            return false;
+        }
+
+        return ['path' => $path, 'type' => 'dir'];
     }
 
     /**
@@ -179,6 +198,9 @@ class GcsAdapter extends AbstractAdapter
      */
     public function getMetadata($path)
     {
+        $result = $this->client->objects->readObject($this->bucket, $path, ['projection' => 'full']);
+
+        return $this->normalizeResponse($result, $path);
     }
 
     /**
@@ -186,6 +208,9 @@ class GcsAdapter extends AbstractAdapter
      */
     public function getMimetype($path)
     {
+        $meta = $this->getMetadata($path);
+
+        return $meta['mimetype'];
     }
 
     /**
@@ -193,6 +218,9 @@ class GcsAdapter extends AbstractAdapter
      */
     public function getSize($path)
     {
+        $meta = $this->getMetadata($path);
+
+        return $meta['size'];
     }
 
     /**
@@ -200,6 +228,9 @@ class GcsAdapter extends AbstractAdapter
      */
     public function getTimestamp($path)
     {
+        $meta = $this->getMetadata($path);
+
+        return $meta['timestamp'];
     }
 
     /**
@@ -221,5 +252,34 @@ class GcsAdapter extends AbstractAdapter
      */
     public function listContents($dirname = '', $recursive = false)
     {
+        $objects = $this->client->objects->listObjects($this->bucket, ['prefix' => $dirname]);
+    }
+
+    /**
+     * Normalize a result from GCS.
+     *
+     * @param Google_Service_Storage_StorageObject $object
+     * @param string                               $path
+     *
+     * @return array file metadata
+     */
+    protected function normalizeResponse(Google_Service_Storage_StorageObject $object, $path = null)
+    {
+        $result = ['path' => $path ?: $this->removePathPrefix($object->getName())];
+        $result['dirname'] = Util::dirname($result['path']);
+        $result['timestamp'] = strtotime($object->getUpdated());
+
+        if (substr($result['path'], -1) === '/') {
+            $result['type'] = 'dir';
+            $result['path'] = rtrim($result['path'], '/');
+
+            return $result;
+        }
+
+        $result['type'] = 'file';
+        $result['size'] = $object->getSize();
+        $result['mimetype'] = $object->getContentType();
+
+        return $result;
     }
 }

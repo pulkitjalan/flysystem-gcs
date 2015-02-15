@@ -20,8 +20,5 @@
         "psr-4": {
             "League\\Flysystem\\Gcs\\": "src/"
         }
-    },
-    "config": {
-        "bin-dir": "bin"
     }
 }
