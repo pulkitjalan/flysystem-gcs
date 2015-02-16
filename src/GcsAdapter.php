@@ -4,7 +4,7 @@ namespace League\Flysystem\Gcs;
 
 use League\Flysystem\Adapter\AbstractAdapter;
 use League\Flysystem\Config;
-use Google_Service_Storage;
+use League\Flysystem\Util;
 
 class GcsAdapter extends AbstractAdapter
 {
@@ -27,7 +27,7 @@ class GcsAdapter extends AbstractAdapter
      * @param array                  $options
      */
     public function __construct(
-        Google_Service_Storage $client,
+        \Google_Service_Storage $client,
         $bucket,
         $prefix = null,
         array $options = []
@@ -35,7 +35,7 @@ class GcsAdapter extends AbstractAdapter
         $this->client  = $client;
         $this->bucket  = $bucket;
         $this->setPathPrefix($prefix);
-        $this->options = array_merge($this->options, $options);
+        $this->options = $options;
     }
 
     /**
@@ -112,7 +112,9 @@ class GcsAdapter extends AbstractAdapter
      */
     public function read($path)
     {
-        return $this->readObject($path);
+        $file = $this->client->objects->get($this->bucket, $path, ['alt' => 'media']);
+
+        return array_merge($this->getMetadata($path), ['contents' => $file]);
     }
 
     /**
@@ -120,20 +122,6 @@ class GcsAdapter extends AbstractAdapter
      */
     public function readStream($path)
     {
-    }
-
-    /**
-     * Read an object from the Google_Service_Storage.
-     *
-     * @param string $path
-     *
-     * @return array
-     */
-    protected function readObject($path)
-    {
-        $file = $this->client->objects->readObject($this->bucket, $path, ['alt' => 'media']);
-
-        return array_merge($this->getMetadata($path), ['contents' => $file]);
     }
 
     /**
@@ -252,7 +240,39 @@ class GcsAdapter extends AbstractAdapter
      */
     public function listContents($dirname = '', $recursive = false)
     {
-        $objects = $this->client->objects->listObjects($this->bucket, ['prefix' => $dirname]);
+        $items = $this->listAllItems($dirname, $recursive);
+
+        $result = array_map([$this, 'normalizeResponse'], $items);
+
+        return Util::emulateDirectories($result);
+    }
+
+    /**
+     * Recursively list all items in a bucket
+     *
+     * @param string $dirname
+     * @param bool   $recursive
+     * @param array  $items
+     * @param string $pageToken
+     *
+     * @return array Google_Service_Storage_StorageObject
+     */
+    protected function listAllItems($dirname = '', $recursive = false, $items = [], $pageToken = '')
+    {
+        $objects = $this->client->objects->listObjects($this->bucket, [
+            'delimiter' => ($recursive) ? '' : '/',
+            'prefix' => $this->applyPathPrefix($dirname),
+            'projection' => 'full',
+            'pageToken' => $pageToken
+        ]);
+
+        $items = array_merge($items, $objects->getItems());
+
+        if ($objects->getNextPageToken()) {
+            $items = $this->listAllItems($dirname, $recursive, $items, $objects->getNextPageToken());
+        }
+
+        return $items;
     }
 
     /**
@@ -263,7 +283,7 @@ class GcsAdapter extends AbstractAdapter
      *
      * @return array file metadata
      */
-    protected function normalizeResponse(Google_Service_Storage_StorageObject $object, $path = null)
+    protected function normalizeResponse(\Google_Service_Storage_StorageObject $object, $path = null)
     {
         $result = ['path' => $path ?: $this->removePathPrefix($object->getName())];
         $result['dirname'] = Util::dirname($result['path']);
