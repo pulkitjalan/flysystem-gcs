@@ -79,8 +79,8 @@ class GcsAdapter extends AbstractAdapter
 
         $args = [
             'uploadType' => 'multipart',
-            'data' => $contents,
-            'name' => $path,
+            'data'       => $contents,
+            'name'       => $path,
         ];
 
         return $this->client->objects->insert($this->bucket, $postBody, $args);
@@ -248,7 +248,7 @@ class GcsAdapter extends AbstractAdapter
     }
 
     /**
-     * Recursively list all items in a bucket
+     * Recursively list all items in a bucket.
      *
      * @param string $dirname
      * @param bool   $recursive
@@ -260,10 +260,10 @@ class GcsAdapter extends AbstractAdapter
     protected function listAllItems($dirname = '', $recursive = false, $items = [], $pageToken = '')
     {
         $objects = $this->client->objects->listObjects($this->bucket, [
-            'delimiter' => ($recursive) ? '' : '/',
-            'prefix' => $this->applyPathPrefix($dirname),
+            'delimiter'  => ($recursive) ? '' : '/',
+            'prefix'     => $this->applyPathPrefix($dirname),
             'projection' => 'full',
-            'pageToken' => $pageToken
+            'pageToken'  => $pageToken,
         ]);
 
         $items = array_merge($items, $objects->getItems());
