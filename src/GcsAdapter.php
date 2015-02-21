@@ -98,6 +98,16 @@ class GcsAdapter extends AbstractAdapter
      */
     public function update($path, $contents, Config $config)
     {
+        $postBody = new \Google_Service_Storage_StorageObject();
+        $postBody->setName($path);
+
+        $args = [
+            'uploadType' => 'multipart',
+            'data'       => $contents,
+            'name'       => $path,
+        ];
+
+        return $this->client->objects->patch($this->bucket, $postBody, $args);
     }
 
     /**
@@ -186,7 +196,7 @@ class GcsAdapter extends AbstractAdapter
      */
     public function getMetadata($path)
     {
-        $result = $this->client->objects->readObject($this->bucket, $path, ['projection' => 'full']);
+        $result = $this->client->objects->get($this->bucket, $path, ['projection' => 'full']);
 
         return $this->normalizeResponse($result, $path);
     }
@@ -226,6 +236,16 @@ class GcsAdapter extends AbstractAdapter
      */
     public function getVisibility($path)
     {
+        $meta = $this->getMetadata($path);
+        $acls = $meta->getAcl();
+
+        foreach ($acls as $key => $acl) {
+            if ($acl->getEntity() === 'allUsers') {
+                return AdapterInterface::VISIBILITY_PUBLIC;
+            }
+        }
+
+        return AdapterInterface::VISIBILITY_PRIVATE;
     }
 
     /**
@@ -233,6 +253,33 @@ class GcsAdapter extends AbstractAdapter
      */
     public function setVisibility($path, $visibility)
     {
+        $meta = $this->getMetadata($path);
+        $acls = $meta->getAcl();
+
+        $postBody = new \Google_Service_Storage_StorageObject();
+        $postBody->setName($path);
+
+        // if public then add allUsers acl else remove if it already exists
+        if ($visibility === AdapterInterface::VISIBILITY_PUBLIC) {
+            $acl = new \Google_Service_Storage_ObjectAccessControl();
+            $acl->setEntity('allUsers');
+            $acl->setRole('READER');
+
+            $acls = array_merge($acls, [$acl]);
+        } else {
+            // if file is already public remove allUsers acl
+            foreach ($acls as $key => $acl) {
+                if ($acl->getEntity() === 'allUsers') {
+                    unset($acls[$key]);
+                }
+            }
+        }
+
+        $postBody->setAcl($acls);
+
+        $this->client->update($this->bucket, $path, $postBody);
+
+        return compact('visibility');
     }
 
     /**
